@@ -269,11 +269,13 @@ def main():
 
         # Stahování Show.aspx souborů pro každou položku
         for i, it in enumerate(all_items, start=1):
-            label_path = sanitize(" - ".join(it["path"]) if it.get("path") else it["label"])
-            target_dir = os.path.join(OUT_BASE, label_path)
+            #label_path = sanitize(" - ".join(it["path"]) if it.get("path") else it["label"])
+            #target_dir = os.path.join(OUT_BASE, label_path)
+            target_dir = build_target_dir(OUT_BASE, it.get("path"), it.get("label"))
             ensure_dir(target_dir)
 
-            log(f"\n📁 ({i}/{len(all_items)}) {label_path}")
+            #log(f"\n📁 ({i}/{len(all_items)}) {label_path}")
+            log(f"\n📁 ({i}/{len(all_items)}) {os.path.relpath(target_dir, OUT_BASE)}")
             page.goto(it["url"], wait_until="networkidle")
             time.sleep(REQUEST_THROTTLE)
 
@@ -288,6 +290,18 @@ def main():
 
         browser.close()
         log(f"\n✅ Hotovo. Výstup v: {os.path.abspath(OUT_BASE)}")
+
+def build_target_dir(base: str, path_parts: list[str] | None, fallback_label: str) -> str:
+    """
+    Z 'path_parts' (breadcrumb) vytvoří vnořenou strukturu složek.
+    Pokud path_parts chybí, použije fallback_label.
+    """
+    parts = [sanitize(p) for p in (path_parts or []) if p and p.strip()]
+    if not parts:
+        parts = [sanitize(fallback_label)]
+    # volitelně můžeš vynechat první "TTP":
+    # if parts and parts[0].lower() == "ttp": parts = parts[1:]
+    return os.path.join(base, *parts)
 
 if __name__ == "__main__":
     main()
