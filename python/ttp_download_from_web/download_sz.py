@@ -1,7 +1,7 @@
 # download_ttp_showlinks_verbose.py
 from playwright.sync_api import sync_playwright
 from urllib.parse import urljoin
-import os, re, time, zipfile, io, unicodedata, urllib.parse, sys
+import os, re, time, zipfile, io, unicodedata, urllib.parse, sys, shutil
 from datetime import datetime
 
 # --- Nastavení ---
@@ -205,8 +205,22 @@ def download_via_context(context, url: str, suggested_name: str, target_dir: str
         try:
             with zipfile.ZipFile(io.BytesIO(body)) as zf:
                 zf.extractall(target_dir)
+
+                # ✅ po rozbalení: přesunout XML začínající TabTrat_ do složky "Body tratí"
+                body_dir = os.path.join(target_dir, "Body tratí")
+                os.makedirs(body_dir, exist_ok=True)
+
+                for member in zf.namelist():
+                    filename = os.path.basename(member)
+                    if filename.lower().startswith("tabtrat_") and filename.lower().endswith(".xml"):
+                        src_path = os.path.join(target_dir, filename)
+                        dst_path = os.path.join(body_dir, filename)
+                        if os.path.exists(src_path):
+                            shutil.move(src_path, dst_path)
+                            print(f"      📦 přesunuto do Body tratí: {filename}")
+
             os.remove(out_path)
-            log(f"      ✅ rozbaleno ({base_name})")
+            print(f"    ✅ rozbaleno ({base_name})")
         except zipfile.BadZipFile:
             log(f"      ⚠ soubor má .zip, ale nejde rozbalit: {base_name}")
     else:
@@ -284,6 +298,12 @@ def main():
 
             for idx, link in enumerate(show_links, start=1):
                 suggested = sanitize(link["name"] or "soubor")
+
+                # ⚠️ Přeskočit XML soubory podle názvu
+                if suggested.lower().endswith(".xml") or "xml" in suggested.lower():
+                    log(f"    ({idx}/{len(show_links)}) ⏭ přeskočeno (XML): {suggested}")
+                    continue
+
                 log(f"    ({idx}/{len(show_links)}) ⬇ stahuji: {suggested}")
                 download_via_context(context, link["url"], suggested, target_dir)
                 time.sleep(REQUEST_THROTTLE)
