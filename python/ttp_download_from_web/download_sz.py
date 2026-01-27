@@ -1,15 +1,21 @@
-# download_ttp_showlinks_verbose.py
 from playwright.sync_api import sync_playwright
 from urllib.parse import urljoin
-import os, re, time, zipfile, io, unicodedata, urllib.parse, sys, shutil
+import os, re, time, zipfile, io, unicodedata, urllib.parse, sys
 from datetime import datetime
+from collections import deque
 
 # --- Nastavení ---
 BASE_TTP_URL = "https://provoz.spravazeleznic.cz/Portal/ViewArticle.aspx?oid=5931"  # kořen TTP
 AUTH_STATE_FILE = "auth_spravazeleznic.json"
 OUT_BASE = "SZ_TTP"
-REQUEST_THROTTLE = 0.25
+REQUEST_THROTTLE = 0.05
 EXCLUDED_MENU_TITLES = {"xml"}  # ignorovat větve "XML"
+
+# přesné pravidlo: suffix "_xml" před příponou, typicky *_xml.zip
+XML_SUFFIX_RE = re.compile(r"_xml$", re.IGNORECASE)
+
+DIACRITICS_CHARS = "áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ"
+
 
 # --- Pomocné logování ---
 def log(msg: str):
@@ -17,28 +23,70 @@ def log(msg: str):
     print(f"[{ts}] {msg}")
     sys.stdout.flush()
 
-# --- Utility ---
-DIACRITICS_CHARS = "áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ"
 
+# --- Utility ---
 def sanitize(s: str) -> str:
     s = re.sub(r"[\\/*?\"<>|:]", "_", s or "")
     s = re.sub(r"\s+", " ", s)
     return s.strip()
 
+
 def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
+
 
 def nfc(s: str) -> str:
     return unicodedata.normalize("NFC", s or "")
 
+
+def strip_diacritics(s: str) -> str:
+    # odstraní diakritiku, aby šlo robustně porovnávat "trati" vs "tratí"
+    s = unicodedata.normalize("NFKD", s or "")
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
+
+
 def diacritics_score(s: str) -> int:
     return sum(ch in DIACRITICS_CHARS for ch in (s or ""))
 
+
+def is_xml_suffix(filename: str) -> bool:
+    """
+    True, pokud název souboru má suffix "_xml" na STEMu, typicky:
+    - xxx_xml.zip
+    - xxx_xml.pdf
+    - xxx_xml  (bez přípony)
+    """
+    base = (os.path.basename(filename or "")).strip()
+    if not base:
+        return False
+    stem, _ext = os.path.splitext(base)
+    if stem and XML_SUFFIX_RE.search(stem):
+        return True
+    return bool(XML_SUFFIX_RE.search(base))
+
+
+def is_body_trati_ttp_zip(filename: str) -> bool:
+    """
+    True, pokud jde o ZIP, jehož název (bez přípony) končí na 'Body tratí TTP'
+    (robustně vůči diakritice a velikosti písmen).
+    """
+    base = (os.path.basename(filename or "")).strip()
+    if not base:
+        return False
+    stem, ext = os.path.splitext(base)
+    if ext.lower() != ".zip":
+        return False
+
+    stem_norm = strip_diacritics(stem).casefold().strip()
+    target = strip_diacritics("Body tratí TTP").casefold()
+
+    return stem_norm.endswith(target)
+
+
 def parse_cd_filename(header: str) -> str | None:
-    """Zkus vytáhnout jméno z Content-Disposition, podpora RFC5987 a re-dekódů z Latin-1 → (utf-8|cp1250|iso-8859-2)."""
+    """Vytáhne jméno z Content-Disposition, vč. RFC5987."""
     if not header:
         return None
-    # 1) RFC 5987: filename*=UTF-8''%..%..
     m = re.search(r"filename\*\s*=\s*([^']+)''([^;]+)", header, flags=re.I)
     if m:
         enc = m.group(1).strip().lower()
@@ -47,7 +95,7 @@ def parse_cd_filename(header: str) -> str | None:
             return nfc(urllib.parse.unquote(raw, encoding=enc, errors="replace"))
         except Exception:
             return nfc(urllib.parse.unquote(raw, encoding="utf-8", errors="replace"))
-    # 2) filename="..." (nebo bez uvozovek)
+
     m = re.search(r'filename\s*=\s*"([^"]+)"', header, flags=re.I)
     if not m:
         m = re.search(r"filename\s*=\s*([^;]+)", header, flags=re.I)
@@ -66,19 +114,21 @@ def parse_cd_filename(header: str) -> str | None:
         return nfc(max(cands, key=diacritics_score))
     return None
 
+
 def choose_best_filename(cd_name: str | None, link_text: str | None) -> str:
-    """Vyber jméno s lepší diakritikou; při rovnosti delší variantu."""
+    """Vybere jméno s lepší diakritikou; při rovnosti delší variantu."""
     a = nfc((cd_name or "").strip())
     b = nfc((link_text or "").strip())
-    if not a and b: return b
-    if not b and a: return a
-    if diacritics_score(b) > diacritrics_score(a): return b  # type: ignore  # (fix níže)
-    if diacritrics_score(a) > diacritrics_score(b): return a  # type: ignore
+    if not a and b:
+        return b
+    if not b and a:
+        return a
+    if diacritics_score(b) > diacritics_score(a):
+        return b
+    if diacritics_score(a) > diacritics_score(b):
+        return a
     return b if len(b) > len(a) else a
 
-# (fix překlepu v názvu funkce nad řádkem)
-def diacritrics_score(s: str) -> int:
-    return diacritics_score(s)
 
 def infer_ext_from_headers(headers: dict, fallback_name: str) -> str:
     cd = headers.get("content-disposition") or headers.get("Content-Disposition")
@@ -88,14 +138,15 @@ def infer_ext_from_headers(headers: dict, fallback_name: str) -> str:
             ext = os.path.splitext(cd_fn)[1]
             if ext:
                 return ext
-    ctype = headers.get("content-type") or headers.get("Content-Type") or ""
-    if "zip" in ctype.lower():
+    ctype = (headers.get("content-type") or headers.get("Content-Type") or "").lower()
+    if "zip" in ctype:
         return ".zip"
-    if "pdf" in ctype.lower():
+    if "pdf" in ctype:
         return ".pdf"
-    if (fallback_name or "").lower().endswith("pdf"):
+    if (fallback_name or "").lower().endswith(".pdf"):
         return ".pdf"
     return ""
+
 
 def is_excluded_item(item: dict) -> bool:
     label = (item.get("label") or "").strip().lower()
@@ -105,6 +156,7 @@ def is_excluded_item(item: dict) -> bool:
         if (p or "").strip().lower() in EXCLUDED_MENU_TITLES:
             return True
     return False
+
 
 # --- Menu parsování ---
 def read_leftmenu_ttp_tree(page):
@@ -137,8 +189,8 @@ def read_leftmenu_ttp_tree(page):
       }
       function childULs(li) {
         const arr = [];
-        li.querySelectorAll(':scope > ul').forEach(u => arr.push(u));  // běžné vnoření
-        const adj = li.nextElementSibling;                             // "li + ul" (sourozenec)
+        li.querySelectorAll(':scope > ul').forEach(u => arr.push(u));
+        const adj = li.nextElementSibling; // "li + ul"
         if (adj && adj.tagName && adj.tagName.toLowerCase() === 'ul') arr.push(adj);
         return arr;
       }
@@ -165,6 +217,7 @@ def read_leftmenu_ttp_tree(page):
     """
     return page.evaluate(js)
 
+
 def find_show_links_with_names(page, context_url: str):
     anchors = page.eval_on_selector_all(
         'a[href*="Show.aspx?oid="]',
@@ -176,12 +229,21 @@ def find_show_links_with_names(page, context_url: str):
         name = a.get("text") or "soubor"
         if "Show.aspx?oid=" in url:
             out.append({"url": url, "name": name})
-    # unique by url
     useen, unique = set(), []
     for it in out:
-        if it["url"] in useen: continue
-        useen.add(it["url"]); unique.append(it)
+        if it["url"] in useen:
+            continue
+        useen.add(it["url"])
+        unique.append(it)
     return unique
+
+
+def build_target_dir(base: str, path_parts: list[str] | None, fallback_label: str) -> str:
+    parts = [sanitize(p) for p in (path_parts or []) if p and p.strip()]
+    if not parts:
+        parts = [sanitize(fallback_label)]
+    return os.path.join(base, *parts)
+
 
 # --- Stahování ---
 def download_via_context(context, url: str, suggested_name: str, target_dir: str):
@@ -190,37 +252,38 @@ def download_via_context(context, url: str, suggested_name: str, target_dir: str
     if not r.ok:
         log(f"      ⚠ HTTP {r.status}: {url}")
         return
+
     headers, body = r.headers, r.body()
     cd_name = parse_cd_filename(headers.get("content-disposition") or headers.get("Content-Disposition"))
-    base_name = choose_best_filename(cd_name, suggested_name)
-    base_name = sanitize(base_name)
+    base_name = sanitize(choose_best_filename(cd_name, suggested_name))
+
     ext = os.path.splitext(base_name)[1]
     if not ext:
         ext = infer_ext_from_headers(headers, base_name) or ""
         base_name += ext
+
+    # ✅ nepouštět *_xml.zip (suffix _xml)
+    if is_xml_suffix(base_name):
+        log(f"      ⏭ přeskočeno (suffix _xml): {base_name}")
+        return
+
+    # ✅ nepouštět ZIP, který končí na "Body tratí TTP"
+    if is_body_trati_ttp_zip(base_name):
+        log(f"      ⏭ přeskočeno (ZIP: Body tratí TTP): {base_name}")
+        return
+
     out_path = os.path.join(target_dir, base_name)
+
     with open(out_path, "wb") as f:
         f.write(body)
+
     if out_path.lower().endswith(".zip"):
         try:
             with zipfile.ZipFile(io.BytesIO(body)) as zf:
                 zf.extractall(target_dir)
 
-                # ✅ po rozbalení: přesunout XML začínající TabTrat_ do složky "Body tratí"
-                body_dir = os.path.join(target_dir, "Body tratí")
-                os.makedirs(body_dir, exist_ok=True)
-
-                for member in zf.namelist():
-                    filename = os.path.basename(member)
-                    if filename.lower().startswith("tabtrat_") and filename.lower().endswith(".xml"):
-                        src_path = os.path.join(target_dir, filename)
-                        dst_path = os.path.join(body_dir, filename)
-                        if os.path.exists(src_path):
-                            shutil.move(src_path, dst_path)
-                            print(f"      📦 přesunuto do Body tratí: {filename}")
-
             os.remove(out_path)
-            print(f"    ✅ rozbaleno ({base_name})")
+            log(f"    ✅ rozbaleno ({base_name})")
         except zipfile.BadZipFile:
             log(f"      ⚠ soubor má .zip, ale nejde rozbalit: {base_name}")
     else:
@@ -244,54 +307,47 @@ def main():
         log(f"Načítám TTP kořen: {BASE_TTP_URL}")
         page.goto(BASE_TTP_URL, wait_until="networkidle")
         page.wait_for_selector("#leftnav .leftmenu", timeout=15000)
-        time.sleep(REQUEST_THROTTLE)
+        #time.sleep(REQUEST_THROTTLE)
 
-        log("Skenuji strom menu (včetně 'li + ul')…")
+        log("Skenuji strom menu…")
         items = [it for it in (read_leftmenu_ttp_tree(page) or []) if not is_excluded_item(it)]
         log(f"🌲 Načteno {len(items)} položek z menu (po filtraci XML).")
 
-        # BFS rozšíření (kdyby se něco objevovalo až po vstupu na podstránku)
+        # ✅ procházení větví (BFS) – původní funkční chování
         collected = {it["url"]: it for it in items}
-        to_visit, visited = list(collected.keys()), set()
-        total_to_visit_initial = len(to_visit)
+        to_visit = deque(collected.keys())
+        visited = set()
 
         while to_visit:
-            url = to_visit.pop(0)
+            url = to_visit.popleft()
             if url in visited:
                 continue
             visited.add(url)
-            log(f"🔎 Procházím stránku {url} ({len(visited)}/{max(len(collected), total_to_visit_initial)})…")
+
+            log(f"🔎 Procházím stránku {url} ({len(visited)}/{len(collected)})…")
             page.goto(url, wait_until="networkidle")
             try:
                 page.wait_for_selector("#leftnav .leftmenu", timeout=10000)
             except Exception:
                 log("  ⚠ levé menu nenačteno (pokračuji)")
-            time.sleep(REQUEST_THROTTLE)
+            #time.sleep(REQUEST_THROTTLE)
 
             more = [it for it in (read_leftmenu_ttp_tree(page) or []) if not is_excluded_item(it)]
-            new_count = 0
             for it in more:
                 if it["url"] not in collected:
                     collected[it["url"]] = it
                     to_visit.append(it["url"])
-                    new_count += 1
-            if new_count:
-                log(f"  ➕ nalezeno nových položek v menu: {new_count} (celkem zatím {len(collected)})")
 
         all_items = list(collected.values())
         log(f"📦 Celkem TTP položek ke stažení: {len(all_items)}")
 
-        # Stahování Show.aspx souborů pro každou položku
         for i, it in enumerate(all_items, start=1):
-            #label_path = sanitize(" - ".join(it["path"]) if it.get("path") else it["label"])
-            #target_dir = os.path.join(OUT_BASE, label_path)
             target_dir = build_target_dir(OUT_BASE, it.get("path"), it.get("label"))
             ensure_dir(target_dir)
 
-            #log(f"\n📁 ({i}/{len(all_items)}) {label_path}")
             log(f"\n📁 ({i}/{len(all_items)}) {os.path.relpath(target_dir, OUT_BASE)}")
             page.goto(it["url"], wait_until="networkidle")
-            time.sleep(REQUEST_THROTTLE)
+            #time.sleep(REQUEST_THROTTLE)
 
             show_links = find_show_links_with_names(page, it["url"])
             log(f"  📑 nalezeno Show.aspx odkazů: {len(show_links)}")
@@ -299,29 +355,21 @@ def main():
             for idx, link in enumerate(show_links, start=1):
                 suggested = sanitize(link["name"] or "soubor")
 
-                # ⚠️ Přeskočit XML soubory podle názvu
-                if suggested.lower().endswith(".xml") or "xml" in suggested.lower():
-                    log(f"    ({idx}/{len(show_links)}) ⏭ přeskočeno (XML): {suggested}")
+                # rychlé filtry už z názvu odkazu (hlavní filtr je i po CD v download_via_context)
+                if is_xml_suffix(suggested):
+                    log(f"    ({idx}/{len(show_links)}) ⏭ přeskočeno (suffix _xml): {suggested}")
+                    continue
+                if is_body_trati_ttp_zip(suggested):
+                    log(f"    ({idx}/{len(show_links)}) ⏭ přeskočeno (ZIP: Body tratí TTP): {suggested}")
                     continue
 
                 log(f"    ({idx}/{len(show_links)}) ⬇ stahuji: {suggested}")
                 download_via_context(context, link["url"], suggested, target_dir)
-                time.sleep(REQUEST_THROTTLE)
+                #time.sleep(REQUEST_THROTTLE)
 
         browser.close()
         log(f"\n✅ Hotovo. Výstup v: {os.path.abspath(OUT_BASE)}")
 
-def build_target_dir(base: str, path_parts: list[str] | None, fallback_label: str) -> str:
-    """
-    Z 'path_parts' (breadcrumb) vytvoří vnořenou strukturu složek.
-    Pokud path_parts chybí, použije fallback_label.
-    """
-    parts = [sanitize(p) for p in (path_parts or []) if p and p.strip()]
-    if not parts:
-        parts = [sanitize(fallback_label)]
-    # volitelně můžeš vynechat první "TTP":
-    # if parts and parts[0].lower() == "ttp": parts = parts[1:]
-    return os.path.join(base, *parts)
 
 if __name__ == "__main__":
     main()
