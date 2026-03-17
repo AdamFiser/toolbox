@@ -7,7 +7,7 @@ from collections import deque
 # --- Nastavení ---
 BASE_TTP_URL = "https://provoz.spravazeleznic.cz/Portal/ViewArticle.aspx?oid=5931"  # kořen TTP
 AUTH_STATE_FILE = "auth_spravazeleznic.json"
-OUT_BASE = "SZ_TTP"
+OUT_BASE = os.path.join("SZ_TTP", datetime.now().strftime("%Y%m%d"))
 REQUEST_THROTTLE = 0.05
 EXCLUDED_MENU_TITLES = {"xml"}  # ignorovat větve "XML"
 
