@@ -3,6 +3,9 @@ from urllib.parse import urljoin
 import os, re, time, zipfile, io, unicodedata, urllib.parse, sys
 from datetime import datetime
 from collections import deque
+from save_auth import save_auth
+
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 # --- Nastavení ---
 BASE_TTP_URL = "https://provoz.spravazeleznic.cz/Portal/ViewArticle.aspx?oid=5931"  # kořen TTP
@@ -293,8 +296,8 @@ def download_via_context(context, url: str, suggested_name: str, target_dir: str
 def main():
     log("Start skriptu")
     if not os.path.exists(AUTH_STATE_FILE):
-        log("❗ Chybí auth_spravazeleznic.json (spusť python save_auth.py a přihlas se).")
-        sys.exit(1)
+        log("🔐 Chybí auth stav — přihlašuji se automaticky…")
+        save_auth()
 
     ensure_dir(OUT_BASE)
 
