@@ -1,9 +1,11 @@
 from github import Github, Auth
 from datetime import datetime, timezone
 import pytz
+import os
 
 # Nastavení
-TOKEN = "ghp_ABCSECRET"
+load_dotenv()
+TOKEN = os.environ["GITHUB_TOKEN"]
 ORG_NAME = "oa-pva2-2025-2026"
 ASSIGNMENT_NAME = "py-15-parkovaci-automat"
 DEADLINE = datetime(2026, 3, 4, 15, 0, 0, tzinfo=pytz.timezone('CET'))
