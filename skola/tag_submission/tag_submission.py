@@ -1,5 +1,6 @@
 from github import Github, Auth
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 import pytz
 import os
 
@@ -8,9 +9,9 @@ load_dotenv()
 TOKEN = os.environ["GITHUB_TOKEN"]
 ORG_NAME = "oa-pva2-2025-2026"
 ASSIGNMENT_NAME = "py-15-parkovaci-automat"
-DEADLINE = datetime(2026, 3, 4, 15, 0, 0, tzinfo=pytz.timezone('CET'))
-TAG_NAME = "etapa1-deadline-2025-03-04"
-TAG_MESSAGE = "Snapshot odevzdání k 4.3.2026 15:00 CET"
+DEADLINE = datetime(2026, 4, 10, 15, 0, 0, tzinfo=pytz.timezone('CET'))
+TAG_NAME = "etapa2-deadline-2026-04-10"
+TAG_MESSAGE = "Snapshot odevzdání k 10.4.2026 15:00 CET"
 
 # Boti, které ignorovat
 BOT_NAMES = {
