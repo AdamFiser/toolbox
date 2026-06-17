@@ -1,0 +1,6 @@
+# Shell skripty, cron a Docker entrypointy musí mít LF (CRLF je v Linux
+# kontejneru rozbije: "bad interpreter" / chybný crontab).
+*.sh text eol=lf
+python/ttp_download_from_web/entrypoint.sh text eol=lf
+python/ttp_download_from_web/crontab text eol=lf
+python/ttp_download_from_web/Dockerfile text eol=lf
