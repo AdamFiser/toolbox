@@ -72,6 +72,44 @@ python download_sk.py
 odkazu (`TTP 101 A zmena č. 32`); pro každou trať se vybere nejvyšší číslo změny
 a uloží pod stabilním názvem (`TTP 101 A.pdf`), takže se zapíše jen reálná změna.
 
+## Docker (automatizovaný denní běh)
+
+Kontejner spustí oba downloadery (`run_all.py`) jednou denně přes vnitřní cron.
+Cílovou síťovou složku si připojuje sám přes CIFS/SMB.
+
+1. Do `.env` doplňte přihlášení k SMB share (čte je `docker compose` pro mount):
+
+   ```dotenv
+   SMB_USER=...
+   SMB_PASSWORD=...
+   ```
+
+   `TARGET_DIR` v kontejneru je `/data/ttp` (nastaveno v `docker-compose.yml`),
+   takže hodnotu `TARGET_DIR` z `.env` není potřeba řešit — přepíše se.
+
+2. Spuštění:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+3. Ruční (okamžitý) běh bez čekání na cron:
+
+   ```bash
+   docker compose exec ttp-downloader python run_all.py
+   ```
+
+   Nebo nastavte `RUN_ON_START=true` (proběhne jednou hned po startu).
+
+Logy běhu: `/var/log/ttp/run.log` v kontejneru (volume `ttp_logs`).
+
+**Poznámky k nasazení**
+- Verzi base image v `Dockerfile` (`mcr.microsoft.com/playwright/python:v1.49.0-jammy`)
+  slaďte s verzí balíčku `playwright`.
+- Čas běhu změníte v souboru `crontab` (výchozí 03:00).
+- `uid/gid=1000` v CIFS mountu (`docker-compose.yml`) případně upravte podle práv
+  na share.
+
 ## Vývoj a testy
 
 ```bash

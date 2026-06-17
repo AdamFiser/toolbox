@@ -1,0 +1,26 @@
+services:
+  ttp-downloader:
+    build: .
+    image: ttp-downloader:latest
+    container_name: ttp-downloader
+    env_file: .env
+    environment:
+      # Uvnitř kontejneru je cíl namountovaný CIFS share (přepisuje TARGET_DIR z .env).
+      TARGET_DIR: /data/ttp
+      # RUN_ON_START: "true"   # odkomentuj pro jedno stažení ihned po startu
+    volumes:
+      - ttp_target:/data/ttp
+      - ttp_logs:/var/log/ttp
+    restart: unless-stopped
+
+volumes:
+  # CIFS/SMB připojení cílové síťové složky přímo v kontejneru.
+  # SMB_USER a SMB_PASSWORD nastavte v .env (čte je docker compose).
+  ttp_target:
+    driver: local
+    driver_opts:
+      type: cifs
+      device: "//czmugqum/Sdileni/AirWatchContent/Provoz/KnihaPravidel/TTP"
+      o: "username=${SMB_USER},password=${SMB_PASSWORD},vers=3.0,uid=1000,gid=1000,iocharset=utf8,file_mode=0664,dir_mode=0775"
+  ttp_logs:
+    driver: local
