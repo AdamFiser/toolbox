@@ -1,22 +1,30 @@
-import requests
-from bs4 import BeautifulSoup
-import os
+"""Entrypoint pro stahování a synchronizaci TTP ŽSR (SK).
 
-url = "https://www.zsr.sk/dopravcovia/infrastruktura/tabulky-tratovych-pomerov/"
-resp = requests.get(url)
-soup = BeautifulSoup(resp.text, "html.parser")
+Konfigurace se načítá z ``.env`` (viz ``.env.example``). Veškerá logika žije
+v balíčku :mod:`ttp_sk`.
+"""
 
-links = []
-for a in soup.find_all('a', href=True):
-    href = a['href']
-    if href.lower().endswith('.pdf'):
-        full = href if href.startswith('http') else 'https://www.zsr.sk' + href
-        links.append(full)
+from __future__ import annotations
 
-os.makedirs('SK_TTP', exist_ok=True)
-for link in links:
-    fname = os.path.join('SK_TTP', link.split('/')[-1])
-    r = requests.get(link)
-    with open(fname, 'wb') as f:
-        f.write(r.content)
-    print("Stahnute:", fname)
+import logging
+import sys
+
+from ttp_common.logging_setup import setup_logging
+from ttp_sk.config import SkSettings
+from ttp_sk.run import run
+
+
+def main() -> int:
+    setup_logging(logging.INFO)
+    log = logging.getLogger(__name__)
+    try:
+        settings = SkSettings.from_env()
+        run(settings)
+        return 0
+    except Exception as e:
+        log.error("✗ Běh selhal: %s", e)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
