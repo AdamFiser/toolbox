@@ -23,8 +23,8 @@ from .config import Settings
 from .downloader import DirLocks, build_session, download_file
 from .filters import is_excluded_menu_item, should_skip
 from .menu import build_target_dir, find_show_links_with_names, read_leftmenu_ttp_tree
-from .naming import sanitize
-from .sync import Action, Outcome
+from ttp_common.naming import sanitize
+from ttp_common.sync import Action, Outcome
 
 logger = logging.getLogger(__name__)
 

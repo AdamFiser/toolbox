@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ttp_sz.naming import (
+from ttp_common.naming import (
     choose_best_filename,
     diacritics_score,
     infer_ext_from_headers,

@@ -50,6 +50,21 @@ podle změněného datového suffixu v názvu (`RRRRMMDD`), např.
 python download_sk.py
 ```
 
+ŽSR nevyžaduje přihlášení. Verze tabulky se pozná podle **čísla změny** v textu
+odkazu (`TTP 101 A zmena č. 32`); pro každou trať se vybere nejvyšší číslo změny
+a uloží pod stabilním názvem (`TTP 101 A.pdf`), takže se zapíše jen reálná změna.
+
+Konfigurace ŽSR v `.env`:
+
+| Proměnná | Význam | Výchozí |
+|----------|--------|---------|
+| `SK_TARGET_DIR` | cílová síťová složka | `SK_TTP/<datum>` (fallback) |
+| `SK_PAGE_URL` | stránka se seznamem tabulek | web ŽSR |
+| `SK_SITE_ROOT` | kořen webu pro absolutní odkazy | `https://www.zsr.sk` |
+| `SK_DOWNLOAD_WORKERS` | počet paralelních stahování | `6` |
+| `SK_REQUEST_TIMEOUT_MS` | timeout požadavku (ms) | `30000` |
+| `SK_RETRIES` | počet pokusů při chybě | `3` |
+
 ## Vývoj a testy
 
 ```bash
@@ -57,5 +72,7 @@ pip install -r requirements-dev.txt
 python -m pytest
 ```
 
-Logika je rozdělená do balíčku `ttp_sz/` (čisté funkce `naming`, `versioning`,
-`filters`, `sync` jsou plně pokryté unit testy bez prohlížeče).
+Logika je rozdělená do balíčků: `ttp_common/` (sdílené — `naming`, `versioning`,
+`sync`, `logging_setup`), `ttp_sz/` (SŽ — Playwright, menu, filtry) a `ttp_sk/`
+(ŽSR — requests, verzování podle čísla změny). Čisté funkce jsou plně pokryté
+unit testy bez sítě a prohlížeče.

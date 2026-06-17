@@ -24,8 +24,8 @@ import requests
 
 from .config import Settings
 from .filters import should_skip
-from .naming import choose_best_filename, infer_ext_from_headers, parse_cd_filename, sanitize
-from .sync import Action, Outcome, sync_file
+from ttp_common.naming import choose_best_filename, infer_ext_from_headers, parse_cd_filename, sanitize
+from ttp_common.sync import Action, Outcome, sync_file
 
 logger = logging.getLogger(__name__)
 
