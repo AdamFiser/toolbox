@@ -1,4 +1,8 @@
-"""Orchestrace celého běhu: přihlášení, projití menu, stažení a sync.
+"""Orchestrace celého běhu: přihlášení, procházení menu a paralelní stahování.
+
+Procházení menu (Playwright, jednovláknově) běží v hlavním vlákně a objevené
+soubory průběžně předává do fondu vláken, který je stahuje **souběžně** s dalším
+procházením. Tím se procházení a stahování neblokují navzájem.
 
 Řídí životní cyklus dočasného stavu přihlášení (smaž → přihlas → po dokončení
 smaž) a na konci vypíše přehled reálných změn (co se poslalo do tabletů).
@@ -9,13 +13,14 @@ from __future__ import annotations
 import logging
 import os
 from collections import Counter, deque
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
 from .auth import save_auth
 from .config import Settings
-from .downloader import download_file
+from .downloader import DirLocks, build_session, download_file
 from .filters import is_excluded_menu_item, should_skip
 from .menu import build_target_dir, find_show_links_with_names, read_leftmenu_ttp_tree
 from .naming import sanitize
@@ -33,8 +38,11 @@ def _menu_items(page) -> list[dict]:
     ]
 
 
-def crawl_menu(page, settings: Settings) -> list[dict]:
-    """Projde strom menu do šířky (BFS) a vrátí všechny nalezené položky."""
+def crawl_and_download(page, session, executor, settings: Settings, dir_locks: DirLocks) -> list[Future]:
+    """Projde strom menu (BFS) a průběžně zadává stahování souborů do fondu vláken.
+
+    Vrací seznam :class:`Future` zadaných stahování — volající na ně počká.
+    """
     logger.info("Načítám TTP kořen: %s", settings.base_ttp_url)
     page.goto(settings.base_ttp_url, wait_until="networkidle")
     page.wait_for_selector("#leftnav .leftmenu", timeout=15000)
@@ -45,6 +53,8 @@ def crawl_menu(page, settings: Settings) -> list[dict]:
     collected = {it["url"]: it for it in items}
     to_visit = deque(collected.keys())
     visited: set[str] = set()
+    seen_files: set[str] = set()
+    futures: list[Future] = []
 
     while to_visit:
         url = to_visit.popleft()
@@ -59,36 +69,51 @@ def crawl_menu(page, settings: Settings) -> list[dict]:
         except Exception:
             logger.warning("⚠ levé menu nenačteno (pokračuji)")
 
+        # Objev další větve menu.
         for it in _menu_items(page):
             if it["url"] not in collected:
                 collected[it["url"]] = it
                 to_visit.append(it["url"])
 
-    logger.info("📦 Celkem TTP položek ke stažení: %s", len(collected))
-    return list(collected.values())
-
-
-def download_all(page, context, items: list[dict], settings: Settings) -> list[Outcome]:
-    """Pro každou položku menu stáhne nalezené soubory a vrátí výsledky syncu."""
-    outcomes: list[Outcome] = []
-    for i, it in enumerate(items, start=1):
-        target_dir = Path(build_target_dir(settings.target_dir, it.get("path"), it.get("label")))
+        # Zadej ke stažení soubory z této stránky (běží souběžně s dalším procházením).
+        item = collected[url]
+        target_dir = Path(build_target_dir(settings.target_dir, item.get("path"), item.get("label")))
         target_dir.mkdir(parents=True, exist_ok=True)
 
-        rel = os.path.relpath(target_dir, settings.target_dir)
-        logger.info("📁 (%s/%s) %s", i, len(items), rel)
-        page.goto(it["url"], wait_until="networkidle")
+        show_links = find_show_links_with_names(page, url)
+        queued = 0
+        for link in show_links:
+            durl = link["url"]
+            if durl in seen_files:
+                continue
+            seen_files.add(durl)
 
-        show_links = find_show_links_with_names(page, it["url"])
-        logger.info("  📑 nalezeno Show.aspx odkazů: %s", len(show_links))
-
-        for idx, link in enumerate(show_links, start=1):
             suggested = sanitize(link["name"] or "soubor")
             if should_skip(suggested):
-                logger.info("    (%s/%s) ⏭ přeskočeno (filtr): %s", idx, len(show_links), suggested)
+                logger.info("    ⏭ přeskočeno (filtr): %s", suggested)
                 continue
-            logger.info("    (%s/%s) ⬇ %s", idx, len(show_links), suggested)
-            outcomes.extend(download_file(context, link["url"], suggested, target_dir, settings))
+
+            lock = dir_locks.get(target_dir)
+            futures.append(
+                executor.submit(download_file, session, durl, suggested, target_dir, settings, lock)
+            )
+            queued += 1
+
+        if queued:
+            logger.info("  📑 zadáno ke stažení: %s (souborů na stránce: %s)", queued, len(show_links))
+
+    logger.info("📦 Zadáno celkem %s stahování, čekám na dokončení…", len(futures))
+    return futures
+
+
+def _collect_outcomes(futures: list[Future]) -> list[Outcome]:
+    """Posbírá výsledky stahování; chyby jednotlivých úloh nezhroutí celý běh."""
+    outcomes: list[Outcome] = []
+    for f in as_completed(futures):
+        try:
+            outcomes.extend(f.result())
+        except Exception as e:
+            logger.error("✗ stahování selhalo: %s", e)
     return outcomes
 
 
@@ -132,17 +157,21 @@ def run(settings: Settings) -> list[Outcome]:
     try:
         logger.info("🔐 Přihlašuji se…")
         save_auth(settings)
+        session = build_session(settings.auth_state_file)
+        dir_locks = DirLocks()
 
-        with sync_playwright() as p:
-            logger.info("Spouštím prohlížeč…")
-            browser = p.chromium.launch(headless=settings.headless)
-            context = browser.new_context(storage_state=str(settings.auth_state_file))
-            page = context.new_page()
+        with ThreadPoolExecutor(max_workers=settings.download_workers) as executor:
+            logger.info("Spouštím prohlížeč (paralelních stahování: %s)…", settings.download_workers)
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=settings.headless)
+                context = browser.new_context(storage_state=str(settings.auth_state_file))
+                page = context.new_page()
 
-            items = crawl_menu(page, settings)
-            outcomes = download_all(page, context, items, settings)
+                futures = crawl_and_download(page, session, executor, settings, dir_locks)
 
-            browser.close()
+                browser.close()
+
+            outcomes = _collect_outcomes(futures)
 
         _log_summary(outcomes)
         logger.info("✅ Hotovo. Cíl: %s", settings.target_dir)

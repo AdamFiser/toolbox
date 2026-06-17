@@ -63,6 +63,7 @@ class Settings:
     throttle: float
     request_timeout_ms: int
     retries: int
+    download_workers: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -88,6 +89,7 @@ class Settings:
             throttle=_env_float("SZ_THROTTLE", 0.05),
             request_timeout_ms=_env_int("SZ_REQUEST_TIMEOUT_MS", 30000),
             retries=_env_int("SZ_RETRIES", 3),
+            download_workers=max(1, _env_int("SZ_DOWNLOAD_WORKERS", 6)),
         )
 
     def require_credentials(self) -> None:
