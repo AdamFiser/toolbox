@@ -1,3 +1,0 @@
-# Denní stahování TTP ve 03:00 (čas uprav dle potřeby).
-# Prostředí se načítá v run_all.py z /app/container.env (RUNTIME_ENV_FILE).
-0 5 * * * cd /app && python run_all.py >> /var/log/ttp/run.log 2>&1
