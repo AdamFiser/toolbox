@@ -5,9 +5,27 @@ from __future__ import annotations
 from ttp_sz.filters import (
     is_body_trati_ttp_zip,
     is_excluded_menu_item,
+    is_xml,
     is_xml_suffix,
     should_skip,
 )
+
+
+class TestIsXml:
+    def test_pripona_xml(self):
+        assert is_xml("TabTrat_706B(CDFACAED3F964458996B600F6E620436).xml") is True
+
+    def test_suffix_xml_zip(self):
+        assert is_xml("tabulka_xml.zip") is True
+
+    def test_velikost_pismen_pripony(self):
+        assert is_xml("data.XML") is True
+
+    def test_pdf_neni_xml(self):
+        assert is_xml("304C_01_20260415.pdf") is False
+
+    def test_prazdny(self):
+        assert is_xml("") is False
 
 
 class TestIsXmlSuffix:
@@ -46,8 +64,11 @@ class TestIsBodyTratiTtpZip:
 
 
 class TestShouldSkip:
-    def test_xml(self):
+    def test_xml_suffix(self):
         assert should_skip("neco_xml.zip") is True
+
+    def test_xml_pripona(self):
+        assert should_skip("TabTrat_706B(ABC).xml") is True
 
     def test_body_trati(self):
         assert should_skip("Body tratí TTP.zip") is True

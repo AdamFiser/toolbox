@@ -30,6 +30,17 @@ def is_xml_suffix(filename: str) -> bool:
     return bool(_XML_SUFFIX_RE.search(base))
 
 
+def is_xml(filename: str) -> bool:
+    """True, pokud je soubor XML — buď příponou ``.xml``, nebo suffixem ``_xml``."""
+    base = os.path.basename(filename or "").strip()
+    if not base:
+        return False
+    _stem, ext = os.path.splitext(base)
+    if ext.lower() == ".xml":
+        return True
+    return is_xml_suffix(base)
+
+
 def is_body_trati_ttp_zip(filename: str) -> bool:
     """True, pokud jde o ZIP, jehož název (bez přípony) končí na „Body tratí TTP“.
 
@@ -48,8 +59,8 @@ def is_body_trati_ttp_zip(filename: str) -> bool:
 
 
 def should_skip(filename: str) -> bool:
-    """Sjednocené rozhodnutí, zda soubor vynechat (XML varianta nebo Body tratí TTP)."""
-    return is_xml_suffix(filename) or is_body_trati_ttp_zip(filename)
+    """Sjednocené rozhodnutí, zda soubor vynechat (XML nebo Body tratí TTP)."""
+    return is_xml(filename) or is_body_trati_ttp_zip(filename)
 
 
 def is_excluded_menu_item(label: str | None, path: list[str] | None) -> bool:
