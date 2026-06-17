@@ -11,7 +11,7 @@ import sys
 
 from ttp_sz.config import Settings
 from ttp_sz.crawler import run
-from ttp_sz.logging_setup import setup_logging
+from ttp_common.logging_setup import setup_logging
 
 
 def main() -> int:

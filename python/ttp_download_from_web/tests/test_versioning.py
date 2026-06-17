@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from ttp_sz.versioning import parse_version
+from ttp_common.versioning import parse_version
 
 
 class TestParseVersionDatum:

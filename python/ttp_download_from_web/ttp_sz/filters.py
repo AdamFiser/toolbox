@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import re
 
-from .naming import strip_diacritics
+from ttp_common.naming import strip_diacritics
 
 # Suffix "_xml" na stemu názvu (typicky *_xml.zip) — XML varianty nestahujeme.
 _XML_SUFFIX_RE = re.compile(r"_xml$", re.IGNORECASE)

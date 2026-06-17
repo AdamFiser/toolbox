@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from ttp_sz.sync import Action, plan_for_dated, sync_file
-from ttp_sz.versioning import parse_version
+from ttp_common.sync import Action, plan_for_dated, sync_file
+from ttp_common.versioning import parse_version
 
 
 def _v(name: str):

@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from urllib.parse import urljoin
 
-from .naming import sanitize
+from ttp_common.naming import sanitize
 
 # JS, který projde podstrom „TTP“ levého menu a vrátí seznam položek s URL.
 _LEFTMENU_JS = r"""
