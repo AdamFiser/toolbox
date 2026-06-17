@@ -1,30 +1,22 @@
 """Konfigurace stahování ŽSR (z ``.env``).
 
-ŽSR nevyžaduje přihlášení — stránka je veřejná. Konfiguruje se hlavně cílová
-síťová složka a míra paralelismu.
+Společné provozní parametry (``TARGET_DIR``, ``RETRIES`` …) se čtou sdíleně
+z :mod:`ttp_common.config`; zde žijí jen údaje specifické pro ŽSR (URL stránky).
+ŽSR nevyžaduje přihlášení.
 """
 
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
 
+from ttp_common.config import env_int, env_str, resolve_target
+
 DEFAULT_PAGE_URL = "https://www.zsr.sk/dopravcovia/infrastruktura/tabulky-tratovych-pomerov/"
 DEFAULT_SITE_ROOT = "https://www.zsr.sk"
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.environ.get(name)
-    if raw is None or raw.strip() == "":
-        return default
-    try:
-        return int(raw)
-    except ValueError:
-        return default
+DEFAULT_SUBDIR = "TTP ŽSR"
 
 
 @dataclass(frozen=True)
@@ -41,16 +33,11 @@ class SkSettings:
     @classmethod
     def from_env(cls) -> "SkSettings":
         load_dotenv()
-
-        target = os.environ.get("SK_TARGET_DIR", "").strip()
-        if not target:
-            target = str(Path("SK_TTP") / datetime.now().strftime("%Y%m%d"))
-
         return cls(
-            page_url=os.environ.get("SK_PAGE_URL", DEFAULT_PAGE_URL).strip(),
-            site_root=os.environ.get("SK_SITE_ROOT", DEFAULT_SITE_ROOT).strip(),
-            target_dir=Path(target),
-            workers=max(1, _env_int("SK_DOWNLOAD_WORKERS", 6)),
-            request_timeout_ms=_env_int("SK_REQUEST_TIMEOUT_MS", 30000),
-            retries=_env_int("SK_RETRIES", 3),
+            page_url=env_str("SK_PAGE_URL", DEFAULT_PAGE_URL),
+            site_root=env_str("SK_SITE_ROOT", DEFAULT_SITE_ROOT),
+            target_dir=resolve_target(env_str("SK_SUBDIR", DEFAULT_SUBDIR)),
+            workers=max(1, env_int("DOWNLOAD_WORKERS", 6)),
+            request_timeout_ms=env_int("REQUEST_TIMEOUT_MS", 30000),
+            retries=env_int("RETRIES", 3),
         )

@@ -14,22 +14,40 @@ Stažené soubory se synchronizují do cílové (síťové) složky tak, aby se 
 - `pip install -r requirements.txt`
 - `python -m playwright install chromium` (pro CZ)
 
-## Konfigurace (CZ)
+## Konfigurace
 
-Zkopírujte `.env.example` na `.env` a vyplňte:
+Zkopírujte `.env.example` na `.env` a vyplňte. Pod společným kořenem
+`TARGET_DIR` si každý downloader vytvoří vlastní podsložku (`TTP SŽ`, `TTP ŽSR`).
+
+**Společné parametry:**
+
+| Proměnná | Význam | Výchozí |
+|----------|--------|---------|
+| `TARGET_DIR` | kořenová cílová složka | `.` (lokální fallback) |
+| `HEADLESS` | běh prohlížeče bez okna (SŽ) | `true` |
+| `SKIP_EXISTING` | přeskakovat již aktuální soubory | `true` |
+| `THROTTLE` | prodleva mezi požadavky (s) | `0.05` |
+| `REQUEST_TIMEOUT_MS` | timeout požadavku (ms) | `30000` |
+| `RETRIES` | počet pokusů při chybě | `3` |
+| `DOWNLOAD_WORKERS` | počet paralelních stahování | `6` |
+
+**Jen SŽ:**
 
 | Proměnná | Význam | Výchozí |
 |----------|--------|---------|
 | `SZ_USERNAME`, `SZ_PASSWORD` | přihlášení na portál SŽ | – (povinné) |
-| `SZ_TARGET_DIR` | cílová síťová složka | `SZ_TTP/<datum>` (fallback) |
 | `SZ_BASE_TTP_URL` | kořen TTP v menu | portál SŽ, oid=5931 |
 | `SZ_LOGIN_URL` | přihlašovací stránka | portál SŽ, oid=524607 |
 | `SZ_AUTH_STATE_FILE` | dočasný stav přihlášení | `auth_spravazeleznic.json` |
-| `SZ_HEADLESS` | běh prohlížeče bez okna | `true` |
-| `SZ_SKIP_EXISTING` | přeskakovat již aktuální soubory | `true` |
-| `SZ_THROTTLE` | prodleva mezi požadavky (s) | `0.05` |
-| `SZ_REQUEST_TIMEOUT_MS` | timeout požadavku (ms) | `30000` |
-| `SZ_RETRIES` | počet pokusů při chybě | `3` |
+| `SZ_SUBDIR` | podsložka pod `TARGET_DIR` | `TTP SŽ` |
+
+**Jen ŽSR:**
+
+| Proměnná | Význam | Výchozí |
+|----------|--------|---------|
+| `SK_PAGE_URL` | stránka se seznamem tabulek | web ŽSR |
+| `SK_SITE_ROOT` | kořen webu pro absolutní odkazy | `https://www.zsr.sk` |
+| `SK_SUBDIR` | podsložka pod `TARGET_DIR` | `TTP ŽSR` |
 
 ## Spuštění
 
@@ -53,17 +71,6 @@ python download_sk.py
 ŽSR nevyžaduje přihlášení. Verze tabulky se pozná podle **čísla změny** v textu
 odkazu (`TTP 101 A zmena č. 32`); pro každou trať se vybere nejvyšší číslo změny
 a uloží pod stabilním názvem (`TTP 101 A.pdf`), takže se zapíše jen reálná změna.
-
-Konfigurace ŽSR v `.env`:
-
-| Proměnná | Význam | Výchozí |
-|----------|--------|---------|
-| `SK_TARGET_DIR` | cílová síťová složka | `SK_TTP/<datum>` (fallback) |
-| `SK_PAGE_URL` | stránka se seznamem tabulek | web ŽSR |
-| `SK_SITE_ROOT` | kořen webu pro absolutní odkazy | `https://www.zsr.sk` |
-| `SK_DOWNLOAD_WORKERS` | počet paralelních stahování | `6` |
-| `SK_REQUEST_TIMEOUT_MS` | timeout požadavku (ms) | `30000` |
-| `SK_RETRIES` | počet pokusů při chybě | `3` |
 
 ## Vývoj a testy
 
