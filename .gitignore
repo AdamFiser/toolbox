@@ -2,3 +2,8 @@
 /python/ttp_download_from_web/.env
 /python/ttp_download_from_web/auth_spravazeleznic.json
 /skola/tag_submission/.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
