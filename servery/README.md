@@ -7,7 +7,7 @@ Dokumentace a nástroje pro správu docker serverů PKPCI.
 | Server | OS | Přístup | Portainer |
 |---|---|---|---|
 | `docker.pkpcargointernational.com` (hostname `czmugdocker`) | CentOS Stream 9, Docker 29 | `ssh afiser@…` (skupina `docker`, bez sudo) | **server** `portainer/portainer-ce:lts`, porty 8000 (edge tunel) a 9443 (UI), data ve volume `portainer_data` |
-| `bestie.pkpcargointernational.com` | ? | údaje v Bitwarden Secrets Manageru | **agent** `portainer/agent` na portu 9001 |
+| `bestie.pkpcargointernational.com` (`10.136.34.199`) | Ubuntu 24.04, Docker 29 | `ssh aiops@…` (skupina `docker`) | **agent** `portainer/agent`, kontejner `portainer_agent`, port 9001 |
 
 V Portaineru jsou zaregistrovaná dvě prostředí: lokální socket serveru `docker`
 a `tcp://bestie.pkpcargointernational.com:9001` (agent).
@@ -20,6 +20,17 @@ na každém serveru. Postup přidání nového serveru:
 
 ```bash
 ssh-copy-id -i ~/.ssh/id_ed25519_toolbox.pub uzivatel@server   # zeptá se na heslo
+```
+
+Původní klíč účtu `aiops` na bestii je v Bitwarden Secrets Manageru
+(`bitwarden.pkpcargointernational.com`) jako secret `BESTIE_SSH_PRIVATE_KEY_B64`
+(soukromý klíč v base64). Načtení přes [`bws`](https://github.com/bitwarden/sdk-sm):
+
+```bash
+export BWS_ACCESS_TOKEN=$(cat ~/.config/bws/token)
+bws secret list --server-url https://bitwarden.pkpcargointernational.com
+bws secret get <id> --server-url https://bitwarden.pkpcargointernational.com -o json \
+	| python -c "import sys,json,base64;sys.stdout.buffer.write(base64.b64decode(json.load(sys.stdin)['value']))" > ~/.ssh/id_bestie
 ```
 
 ## Aktualizace Portaineru
@@ -43,6 +54,14 @@ Spouštěj z Git Bash. Postup skriptu:
 Výměnu kontejneru dělá `portainer/recreate-container.sh`. Ten běží na serveru:
 starý kontejner přejmenuje na `<název>-old` a nový ověří po 10 s. Když nový
 neběží, smaže ho a vrátí původní kontejner.
+
+### Agent bez `AGENT_SECRET`
+
+Agent na bestii běží bez `AGENT_SECRET`, stejně jako před aktualizací. Bez
+sdíleného secretu agent přijme první Portainer server, který se k němu připojí,
+a to i po každém novém vytvoření kontejneru. Port 9001 je proto vhodné omezit
+firewallem jen na `docker.pkpcargointernational.com`, nebo nastavit stejný
+`AGENT_SECRET` na serveru i na všech agentech.
 
 ### Obnova ze zálohy
 

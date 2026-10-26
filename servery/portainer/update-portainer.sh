@@ -9,7 +9,7 @@ set -euo pipefail
 SSH_KEY=${SSH_KEY:-~/.ssh/id_ed25519_toolbox}
 SERVER_HOST=${SERVER_HOST:-afiser@docker.pkpcargointernational.com}
 SERVER_URL=${SERVER_URL:-https://docker.pkpcargointernational.com:9443}
-read -ra AGENT_HOSTS <<<"${AGENT_HOSTS:-afiser@bestie.pkpcargointernational.com}"
+read -ra AGENT_HOSTS <<<"${AGENT_HOSTS:-aiops@bestie.pkpcargointernational.com}"
 
 here=$(dirname "$0")
 
@@ -38,7 +38,7 @@ update_agents() {
 		remote "$host" portainer_agent "portainer/agent:$version" - \
 			--restart=always -p 9001:9001 \
 			-v /var/run/docker.sock:/var/run/docker.sock \
-			-v /var/lib/docker/volumes:/var/lib/docker/volumes -v /:/host
+			-v /var/lib/docker/volumes:/var/lib/docker/volumes
 	done
 }
 
