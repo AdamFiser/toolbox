@@ -76,3 +76,89 @@ docker start portainer
 
 Starší verze Portaineru nemusí přečíst databázi migrovanou novější verzí.
 Při návratu na starší verzi proto obnov i zálohu z doby před aktualizací.
+
+## Aktualizace Bitwardenu
+
+Na `docker` běží oficiální self-hosted Bitwarden (standardní instalace přes
+`bitwarden.sh`, 11 kontejnerů `bitwarden-*`) v `/opt/bitwarden`. Adresář patří
+uživateli `bitwarden` s právy `700`. `afiser` do něj nevidí a `sudo` bez hesla
+nemá, takže aktualizaci spouští člověk přihlášený přímo jako `bitwarden`
+(heslem). `bitwarden` není v sudoers, `sudo -iu bitwarden` proto nepoužívej.
+
+Databáze se jmenuje `pkpci_vault`, ne `vault` jako v příkladech v dokumentaci.
+Nginx publikuje porty `6443` (HTTPS) a `8280` (HTTP).
+
+Postup vychází z oficiální dokumentace:
+[Update](https://bitwarden.com/help/updating-on-premise/),
+[Backup](https://bitwarden.com/help/backup-on-premise/),
+[příkazy `bitwarden.sh`](https://bitwarden.com/help/install-on-premise-linux/).
+Změny mezi verzemi jsou v [release notes](https://github.com/bitwarden/self-host/releases).
+
+### 1. Záloha databáze (jako `afiser`, bez výpadku)
+
+```bash
+docker exec -i bitwarden-mssql /backup-db.sh
+docker exec bitwarden-mssql ls -lt /etc/bitwarden/mssql/backups | head -3
+```
+
+Ověření integrity zálohy. Heslo `sa` se bere z proměnné `SA_PASSWORD`
+v kontejneru, nikde se nevypisuje:
+
+```bash
+docker exec bitwarden-mssql bash -c '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C \
+	-Q "RESTORE VERIFYONLY FROM DISK = '"'"'/etc/bitwarden/mssql/backups/<soubor>.BAK'"'"'"'
+```
+
+Očekávaný výstup: `The backup set on file 1 is valid.`
+
+### 2. Záloha `bwdata` a aktualizace (jako `bitwarden`, výpadek)
+
+```bash
+cd /opt/bitwarden
+./bitwarden.sh stop
+tar czf ~/bwdata-pre-<verze>-$(date +%F-%H%M).tar.gz -C /opt/bitwarden bwdata && ls -lh ~/bwdata-pre-*.tar.gz
+./bitwarden.sh updateself
+./bitwarden.sh update
+```
+
+Když `tar` selže, nepokračuj a spusť `./bitwarden.sh start`. Archiv potom
+zkopíruj mimo server. Kontejnery `bitwarden_sync` (Directory Connector)
+a `bitwarden_wazuh_collector` nejsou součástí `bitwarden.sh` a update je nemění.
+
+### 3. Kontrola (jako `afiser`)
+
+```bash
+docker ps --format '{{.Names}}\t{{.Image}}\t{{.Status}}' | grep bitwarden
+curl -sk https://localhost:6443/api/config | grep -oE '"version":"[^"]+"'
+curl -sk -o /dev/null -w '%{http_code}\n' https://localhost:6443/alive
+```
+
+Známé hlášky, které nejsou chybou:
+
+- `bitwarden-mssql`: `Login failed for user 'sa'. Reason: Server is in script upgrade mode`
+  během upgradu SQL Serveru. Skončí zprávou `Recovery is complete`.
+- `bitwarden-api` a `bitwarden-admin`: `LaunchDarkly.Sdk … The SDK key provided is invalid.`
+
+### Obnova databáze
+
+Podle [Backup → Restore](https://bitwarden.com/help/backup-on-premise/), s názvem
+databáze `pkpci_vault`:
+
+```bash
+docker exec -it bitwarden-mssql bash -c '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$SA_PASSWORD" -C'
+```
+
+```sql
+use master
+GO
+alter database pkpci_vault set offline with rollback immediate
+GO
+restore database pkpci_vault from disk='/etc/bitwarden/mssql/backups/<soubor>.BAK' with replace
+GO
+alter database pkpci_vault set online
+GO
+exit
+```
+
+Potom jako `bitwarden` spusť `./bitwarden.sh restart`. Návrat na starší verzi
+kontejnerů vyžaduje i obnovu `bwdata` z archivu, protože `update` migruje databázi.
