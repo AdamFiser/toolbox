@@ -40,6 +40,7 @@ update_agents() {
 			-v /var/run/docker.sock:/var/run/docker.sock \
 			-v /var/lib/docker/volumes:/var/lib/docker/volumes
 	done
+	echo "Portainer UI ukáže novou verzi agentů až po dalším snapshotu (interval 5 min)."
 }
 
 case ${1:-all} in

@@ -50,6 +50,8 @@ Spouštěj z Git Bash. Postup skriptu:
 2. **Agenti**: zjistí verzi serveru z `https://docker.pkpcargointernational.com:9443/api/system/status`
    a na každém hostu z `AGENT_HOSTS` stejně vymění kontejner `portainer_agent`
    za `portainer/agent:<verze serveru>`. Agent musí mít stejnou verzi jako server.
+   Portainer UI přebírá verzi agenta až z pravidelného snapshotu prostředí
+   (`SnapshotInterval`, výchozí 5 min). Do té doby ukazuje starou verzi.
 
 Výměnu kontejneru dělá `portainer/recreate-container.sh`. Ten běží na serveru:
 starý kontejner přejmenuje na `<název>-old` a nový ověří po 10 s. Když nový
