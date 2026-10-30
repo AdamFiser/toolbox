@@ -162,3 +162,29 @@ exit
 
 Potom jako `bitwarden` spusť `./bitwarden.sh restart`. Návrat na starší verzi
 kontejnerů vyžaduje i obnovu `bwdata` z archivu, protože `update` migruje databázi.
+
+## Stránka o údržbě v Nginx Proxy Manageru
+
+Když kontejner aplikace při deployi neběží, NPM místo bílé stránky
+`502 Bad Gateway / openresty` vrátí stránku o údržbě (HTTP 503,
+`Retry-After: 20`, automatický refresh po 20 s). Platí pro všechny proxy hosty.
+Chybové stránky aplikací se nenahrazují: `proxy_intercept_errors` zůstává
+vypnuté, takže 5xx z aplikace projde beze změny. Stránka se zobrazí jen u chyb,
+které vygeneruje sám nginx (aplikace neodpovídá nebo neběží).
+
+Soubory jsou v `servery/npm/`:
+
+- `server_proxy.conf` – NPM ho vkládá do každého proxy hostu
+  (`/data/nginx/custom/server_proxy.conf`).
+- `maintenance.html` – stránka, na serveru jako `/data/custom_pages/__npm_maintenance.html`.
+- `render-maintenance.php` – vygeneruje `maintenance.html` z chybové stránky Trenisu
+  (`500.phtml` + `@errorBlock.phtml`). Po změně vzhledu chybové stránky v Trenisu
+  stránku vygeneruj znovu:
+
+  ```bash
+  php servery/npm/render-maintenance.php ../trenis/app/Modules/Presenters/templates/Error > servery/npm/maintenance.html
+  ```
+
+- `deploy-maintenance.sh` – nahraje oba soubory do kontejneru
+  `nginx-proxy-manager-stack-app-1`, spustí `nginx -t` a `nginx -s reload`.
+  Když test konfigurace selže, `server_proxy.conf` smaže.
